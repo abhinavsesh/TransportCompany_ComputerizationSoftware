@@ -31,9 +31,12 @@
             <div class="bg-white p-4 rounded shadow">
                 <h2 class="text-xl font-semibold mb-2">Reports</h2>
                 <button onclick="fetchTrucks()" class="bg-green-500 text-white p-2 rounded mb-2">View Trucks</button>
+                <button onclick="fetchConsignments()" class="bg-green-500 text-white p-2 rounded mb-2">View Consignments</button>
+                <button onclick="fetchEmployees()" class="bg-green-500 text-white p-2 rounded mb-2">View Employees</button>
                 <button onclick="fetchUsage()" class="bg-green-500 text-white p-2 rounded mb-2">Truck Usage</button>
-                <button onclick="fetchConsignments()" class="bg-green-500 text-white p-2 rounded mb-2">Consignment Report</button>
+                <button onclick="fetchConsignmentReport()" class="bg-green-500 text-white p-2 rounded mb-2">Consignment Report</button>
                 <button onclick="fetchWaiting()" class="bg-green-500 text-white p-2 rounded mb-2">Waiting Times</button>
+                <button onclick="refreshAll()" class="bg-yellow-500 text-white p-2 rounded mb-2">Refresh All</button>
                 <div id="reportOutput" class="mt-4"></div>
             </div>
             <div class="bg-white p-4 rounded shadow">
@@ -68,9 +71,87 @@
                     <button type="submit" class="bg-blue-500 text-white p-2 rounded">Add Truck</button>
                 </form>
             </div>
+            <div class="bg-white p-4 rounded shadow">
+                <h2 class="text-xl font-semibold mb-2">Assign Truck to Employee</h2>
+                <form id="assignTruckForm" class="space-y-4">
+                    <select name="truck_id" class="w-full p-2 border rounded" required>
+                        <option value="">Select Truck</option>
+                    </select>
+                    <select name="employee_id" class="w-full p-2 border rounded" required>
+                        <option value="">Select Employee</option>
+                    </select>
+                    <button type="submit" class="bg-blue-500 text-white p-2 rounded">Assign Truck</button>
+                </form>
+            </div>
+            <div class="bg-white p-4 rounded shadow">
+                <h2 class="text-xl font-semibold mb-2">Assign Consignment to Truck</h2>
+                <form id="assignConsignmentForm" class="space-y-4">
+                    <select name="consignment_id" class="w-full p-2 border rounded" required>
+                        <option value="">Select Consignment</option>
+                    </select>
+                    <select name="truck_id" class="w-full p-2 border rounded" required>
+                        <option value="">Select Truck</option>
+                    </select>
+                    <button type="submit" class="bg-blue-500 text-white p-2 rounded">Assign Consignment</button>
+                </form>
+            </div>
         </div>
     </div>
     <script>
+        async function populateAssignForms() {
+            const truckResponse = await fetch('/trucks');
+            const trucks = await truckResponse.json();
+            const employeeResponse = await fetch('/employees');
+            const employees = await employeeResponse.json();
+            const consignmentResponse = await fetch('/consignments');
+            const consignments = await consignmentResponse.json();
+
+            // Populate truck assignment form
+            const truckSelect = document.querySelector('#assignTruckForm select[name="truck_id"]');
+            truckSelect.innerHTML = '<option value="">Select Truck</option>';
+            trucks.forEach(truck => {
+                if (truck.volume < 500) {
+                    const option = document.createElement('option');
+                    option.value = truck.id;
+                    option.textContent = `ID: ${truck.id}, Location: ${truck.location}, Volume: ${truck.volume}`;
+                    truckSelect.appendChild(option);
+                }
+            });
+
+            const employeeSelect = document.querySelector('select[name="employee_id"]');
+            employeeSelect.innerHTML = '<option value="">Select Employee</option>';
+            employees.forEach(employee => {
+                if (employee.role === 'Employee') {
+                    const option = document.createElement('option');
+                    option.value = employee.id;
+                    option.textContent = `Username: ${employee.username}, Branch ID: ${employee.branch_id}`;
+                    employeeSelect.appendChild(option);
+                }
+            });
+
+            // Populate consignment assignment form
+            const consignmentSelect = document.querySelector('select[name="consignment_id"]');
+            consignmentSelect.innerHTML = '<option value="">Select Consignment</option>';
+            consignments.forEach(consignment => {
+                if (consignment.status === 'Pending') {
+                    const option = document.createElement('option');
+                    option.value = consignment.id;
+                    option.textContent = `ID: ${consignment.id}, Volume: ${consignment.volume}, Destination: ${consignment.destination}`;
+                    consignmentSelect.appendChild(option);
+                }
+            });
+
+            const consignmentTruckSelect = document.querySelector('#assignConsignmentForm select[name="truck_id"]');
+            consignmentTruckSelect.innerHTML = '<option value="">Select Truck</option>';
+            trucks.forEach(truck => {
+                const option = document.createElement('option');
+                option.value = truck.id;
+                option.textContent = `ID: ${truck.id}, Location: ${truck.location}, Volume: ${truck.volume}`;
+                option.dataset.branchId = truck.branch_id;
+                consignmentTruckSelect.appendChild(option);
+            });
+        }
+
         document.getElementById('consignmentForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
@@ -82,7 +163,10 @@
             });
             const result = await response.json();
             alert(result.message || result.error);
-            if (response.ok) e.target.reset();
+            if (response.ok) {
+                e.target.reset();
+                populateAssignForms();
+            }
         });
 
         document.getElementById('employeeForm').addEventListener('submit', async (e) => {
@@ -96,7 +180,10 @@
             });
             const result = await response.json();
             alert(result.message || result.error);
-            if (response.ok) e.target.reset();
+            if (response.ok) {
+                e.target.reset();
+                populateAssignForms();
+            }
         });
 
         document.getElementById('branchForm').addEventListener('submit', async (e) => {
@@ -112,7 +199,7 @@
             alert(result.message || result.error);
             if (response.ok) {
                 e.target.reset();
-                window.location.reload(); // Refresh to update branch dropdowns
+                window.location.reload();
             }
         });
 
@@ -127,7 +214,44 @@
             });
             const result = await response.json();
             alert(result.message || result.error);
-            if (response.ok) e.target.reset();
+            if (response.ok) {
+                e.target.reset();
+                populateAssignForms();
+            }
+        });
+
+        document.getElementById('assignTruckForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            const response = await fetch('/trucks/assign', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+            alert(result.message || result.error);
+            if (response.ok) {
+                e.target.reset();
+                populateAssignForms();
+            }
+        });
+
+        document.getElementById('assignConsignmentForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            const response = await fetch('/consignments/assign', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+            alert(result.message || result.error);
+            if (response.ok) {
+                e.target.reset();
+                populateAssignForms();
+            }
         });
 
         async function fetchTrucks() {
@@ -135,7 +259,28 @@
             const trucks = await response.json();
             document.getElementById('reportOutput').innerHTML = `
                 <h3 class="text-lg font-semibold">Truck Status</h3>
-                <ul>${trucks.map(t => `<li>ID: ${t.id}, Location: ${t.location}, Status: ${t.status}</li>`).join('')}</ul>
+                <ul>${trucks.map(t => `
+                    <li>ID: ${t.id}, Location: ${t.location}, Status: ${t.status}, Volume: ${t.volume}
+                        <ul>${t.consignments.map(c => `<li>Consignment ID: ${c.id}, Volume: ${c.volume}, Destination: ${c.destination}</li>`).join('')}</ul>
+                    </li>`).join('')}</ul>
+            `;
+        }
+
+        async function fetchConsignments() {
+            const response = await fetch('/consignments');
+            const consignments = await response.json();
+            document.getElementById('reportOutput').innerHTML = `
+                <h3 class="text-lg font-semibold">Consignments</h3>
+                <ul>${consignments.map(c => `<li>ID: ${c.id}, Volume: ${c.volume}, Destination: ${c.destination}, Status: ${c.status}</li>`).join('')}</ul>
+            `;
+        }
+
+        async function fetchEmployees() {
+            const response = await fetch('/employees');
+            const employees = await response.json();
+            document.getElementById('reportOutput').innerHTML = `
+                <h3 class="text-lg font-semibold">Employees</h3>
+                <ul>${employees.map(e => `<li>ID: ${e.id}, Username: ${e.username}, Role: ${e.role}</li>`).join('')}</ul>
             `;
         }
 
@@ -148,7 +293,7 @@
             `;
         }
 
-        async function fetchConsignments() {
+        async function fetchConsignmentReport() {
             const response = await fetch('/reports/consignments');
             const report = await response.json();
             document.getElementById('reportOutput').innerHTML = `
@@ -168,6 +313,18 @@
                 <p>Average Idle Time: ${report.avg_idle_time_hours.toFixed(2)} hours</p>
             `;
         }
+
+        async function refreshAll() {
+            await Promise.all([fetchTrucks(), fetchConsignments(), fetchEmployees()]);
+            document.getElementById('reportOutput').innerHTML = `
+                <h3 class="text-lg font-semibold">All Data Refreshed</h3>
+                <p>Check individual views for updated data.</p>
+            `;
+            populateAssignForms();
+        }
+
+        // Initialize assignment forms
+        populateAssignForms();
     </script>
 </body>
 </html>
