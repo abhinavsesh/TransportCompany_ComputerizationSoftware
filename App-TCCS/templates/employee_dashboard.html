@@ -25,8 +25,12 @@
                 </form>
             </div>
             <div class="bg-white p-4 rounded shadow">
-                <h2 class="text-xl font-semibold mb-2">Truck Status</h2>
+                <h2 class="text-xl font-semibold mb-2">Status</h2>
                 <button onclick="fetchTrucks()" class="bg-green-500 text-white p-2 rounded mb-2">View Trucks</button>
+                <button onclick="fetchConsignments()" class="bg-green-500 text-white p-2 rounded mb-2">View Consignments</button>
+                <button onclick="fetchEmployees()" class="bg-green-500 text-white p-2 rounded mb-2">View Employees</button>
+                <button onclick="fetchAssignedTrucks()" class="bg-green-500 text-white p-2 rounded mb-2">View Assigned Trucks</button>
+                <button onclick="refreshAll()" class="bg-yellow-500 text-white p-2 rounded mb-2">Refresh All</button>
                 <div id="truckOutput" class="mt-4"></div>
             </div>
         </div>
@@ -42,8 +46,8 @@
                 body: JSON.stringify(data)
             });
             const result = await response.json();
-            alert(result.message);
-            e.target.reset();
+            alert(result.message || result.error);
+            if (response.ok) e.target.reset();
         });
 
         async function fetchTrucks() {
@@ -51,7 +55,42 @@
             const trucks = await response.json();
             document.getElementById('truckOutput').innerHTML = `
                 <h3 class="text-lg font-semibold">Truck Status</h3>
-                <ul>${trucks.map(t => `<li>ID: ${t.id}, Location: ${t.location}, Status: ${t.status}</li>`).join('')}</ul>
+                <ul>${trucks.map(t => `<li>ID: ${t.id}, Location: ${t.location}, Status: ${t.status}, Volume: ${t.volume}</li>`).join('')}</ul>
+            `;
+        }
+
+        async function fetchConsignments() {
+            const response = await fetch('/consignments');
+            const consignments = await response.json();
+            document.getElementById('truckOutput').innerHTML = `
+                <h3 class="text-lg font-semibold">Consignments</h3>
+                <ul>${consignments.map(c => `<li>ID: ${c.id}, Volume: ${c.volume}, Destination: ${c.destination}, Status: ${c.status}</li>`).join('')}</ul>
+            `;
+        }
+
+        async function fetchEmployees() {
+            const response = await fetch('/employees');
+            const employees = await response.json();
+            document.getElementById('truckOutput').innerHTML = `
+                <h3 class="text-lg font-semibold">Employees</h3>
+                <ul>${employees.map(e => `<li>ID: ${e.id}, Username: ${e.username}, Role: ${e.role}</li>`).join('')}</ul>
+            `;
+        }
+
+        async function fetchAssignedTrucks() {
+            const response = await fetch('/trucks/assigned');
+            const trucks = await response.json();
+            document.getElementById('truckOutput').innerHTML = `
+                <h3 class="text-lg font-semibold">Assigned Trucks</h3>
+                <ul>${trucks.map(t => `<li>ID: ${t.id}, Location: ${t.location}, Status: ${t.status}, Volume: ${t.volume}, Assigned: ${t.assigned_at}</li>`).join('')}</ul>
+            `;
+        }
+
+        async function refreshAll() {
+            await Promise.all([fetchTrucks(), fetchConsignments(), fetchEmployees(), fetchAssignedTrucks()]);
+            document.getElementById('truckOutput').innerHTML = `
+                <h3 class="text-lg font-semibold">All Data Refreshed</h3>
+                <p>Check individual views for updated data.</p>
             `;
         }
     </script>
