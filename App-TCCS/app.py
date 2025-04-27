@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import uuid
 import bcrypt
 from functools import wraps
+from sqlalchemy import func
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tccs.db'
@@ -50,6 +51,12 @@ class ConsignmentTruck(db.Model):
     consignment_id = db.Column(db.String(36), db.ForeignKey('consignment.id'))
     truck_id = db.Column(db.String(36), db.ForeignKey('truck.id'))
 
+class TruckAssignment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    truck_id = db.Column(db.String(36), db.ForeignKey('truck.id'), nullable=False)
+    employee_id = db.Column(db.String(36), db.ForeignKey('user.id'), nullable=False)
+    assigned_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 # Authentication Decorator
 def login_required(role=None):
     def decorator(f):
@@ -57,7 +64,7 @@ def login_required(role=None):
         def decorated_function(*args, **kwargs):
             if 'user_id' not in session:
                 return redirect(url_for('login'))
-            user = User.query.get(session['user_id'])
+            user = db.session.get(User, session['user_id'])
             if not user or (role and user.role != role):
                 return jsonify({'error': 'Unauthorized'}), 403
             return f(*args, **kwargs)
@@ -68,7 +75,15 @@ def login_required(role=None):
 def calculate_charge(volume, destination):
     base_rate = 10  # $10 per cubic meter
     distance_factor = 1.5 if destination != 'Capital' else 1.0
-    return volume * base_rate * distance_factor
+    return float(volume) * base_rate * distance_factor
+
+def get_truck_volume(truck_id):
+    total_volume = db.session.query(func.sum(Consignment.volume)).join(
+        ConsignmentTruck
+    ).filter(
+        ConsignmentTruck.truck_id == truck_id
+    ).scalar() or 0
+    return total_volume
 
 def check_truck_allocation(destination, branch_id):
     total_volume = db.session.query(func.sum(Consignment.volume)).filter(
@@ -110,7 +125,7 @@ def logout():
 @app.route('/dashboard')
 @login_required()
 def dashboard():
-    user = User.query.get(session['user_id'])
+    user = db.session.get(User, session['user_id'])
     if user.role == 'Manager':
         branches = Branch.query.all()
         return render_template('manager_dashboard.html', branches=branches)
@@ -119,14 +134,18 @@ def dashboard():
 @app.route('/consignments', methods=['POST'])
 @login_required()
 def add_consignment():
-    user = User.query.get(session['user_id'])
+    user = db.session.get(User, session['user_id'])
     data = request.json
     branch_id = user.branch_id if user.role == 'Employee' else data.get('branch_id')
     if not branch_id:
         return jsonify({'error': 'Branch ID required'}), 400
-    charge = calculate_charge(data['volume'], data['destination'])
+    try:
+        volume = float(data['volume'])
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid volume value'}), 400
+    charge = calculate_charge(volume, data['destination'])
     consignment = Consignment(
-        volume=data['volume'],
+        volume=volume,
         destination=data['destination'],
         sender_name=data['sender_name'],
         sender_address=data['sender_address'],
@@ -140,17 +159,37 @@ def add_consignment():
     truck, consignments = check_truck_allocation(data['destination'], branch_id)
     if truck:
         return jsonify({
-            'message': 'Consignment added and truck allocated',
+            'message': 'Consignment added and truck allocated automatically',
             'truck_id': truck.id,
             'consignments': [{'id': c.id, 'volume': c.volume} for c in consignments]
         }), 201
     return jsonify({'message': 'Consignment added'}), 201
 
+@app.route('/consignments', methods=['GET'])
+@login_required()
+def get_consignments():
+    user = db.session.get(User, session['user_id'])
+    query = Consignment.query
+    if user.role == 'Employee':
+        query = query.filter_by(branch_id=user.branch_id)
+    consignments = query.all()
+    return jsonify([{
+        'id': c.id,
+        'volume': c.volume,
+        'destination': c.destination,
+        'status': c.status,
+        'charge': c.charge,
+        'created_at': c.created_at.isoformat(),
+        'branch_id': c.branch_id
+    } for c in consignments])
+
 @app.route('/consignments/<id>', methods=['GET'])
 @login_required()
 def get_consignment(id):
-    consignment = Consignment.query.get_or_404(id)
-    user = User.query.get(session['user_id'])
+    consignment = db.session.get(Consignment, id)
+    if not consignment:
+        return jsonify({'error': 'Consignment not found'}), 404
+    user = db.session.get(User, session['user_id'])
     if user.role == 'Employee' and consignment.branch_id != user.branch_id:
         return jsonify({'error': 'Unauthorized'}), 403
     return jsonify({
@@ -161,20 +200,114 @@ def get_consignment(id):
         'charge': consignment.charge
     })
 
+@app.route('/consignments/assign', methods=['POST'])
+@login_required(role='Manager')
+def assign_consignment():
+    data = request.json
+    consignment_id = data.get('consignment_id')
+    truck_id = data.get('truck_id')
+    if not consignment_id or not truck_id:
+        return jsonify({'error': 'Consignment ID and Truck ID required'}), 400
+    consignment = db.session.get(Consignment, consignment_id)
+    truck = db.session.get(Truck, truck_id)
+    if not consignment or not truck:
+        return jsonify({'error': 'Invalid consignment or truck ID'}), 404
+    if consignment.status != 'Pending':
+        return jsonify({'error': 'Consignment must be in Pending status'}), 400
+    if consignment.branch_id != truck.branch_id:
+        return jsonify({'error': 'Consignment and truck must be in the same branch'}), 400
+    current_volume = get_truck_volume(truck_id)
+    if current_volume + consignment.volume > 500:
+        return jsonify({'error': 'Assigning this consignment would exceed truck capacity (500 cubic meters)'}), 400
+    consignment.status = 'Dispatched'
+    consignment.dispatched_at = datetime.utcnow()
+    truck.status = 'In-Transit'
+    truck.last_updated = datetime.utcnow()
+    db.session.add(ConsignmentTruck(consignment_id=consignment_id, truck_id=truck_id))
+    db.session.commit()
+    return jsonify({'message': 'Consignment assigned to truck successfully'}), 201
+
 @app.route('/trucks', methods=['GET'])
 @login_required()
 def get_trucks():
-    user = User.query.get(session['user_id'])
+    user = db.session.get(User, session['user_id'])
     query = Truck.query
     if user.role == 'Employee':
         query = query.filter_by(branch_id=user.branch_id)
     trucks = query.all()
-    return jsonify([{
-        'id': t.id,
-        'location': t.location,
-        'status': t.status,
-        'last_updated': t.last_updated.isoformat()
-    } for t in trucks])
+    truck_data = []
+    for truck in trucks:
+        consignments = Consignment.query.join(ConsignmentTruck).filter(
+            ConsignmentTruck.truck_id == truck.id
+        ).all()
+        truck_data.append({
+            'id': truck.id,
+            'location': truck.location,
+            'status': truck.status,
+            'last_updated': truck.last_updated.isoformat(),
+            'volume': get_truck_volume(truck.id),
+            'consignments': [{'id': c.id, 'volume': c.volume, 'destination': c.destination} for c in consignments],
+            'branch_id': truck.branch_id
+        })
+    return jsonify(truck_data)
+
+@app.route('/trucks', methods=['POST'])
+@login_required(role='Manager')
+def add_truck():
+    data = request.json
+    if not data.get('location') or not data.get('branch_id'):
+        return jsonify({'error': 'Location and branch_id required'}), 400
+    if not db.session.get(Branch, data['branch_id']):
+        return jsonify({'error': 'Invalid branch_id'}), 400
+    truck = Truck(
+        location=data['location'],
+        branch_id=data['branch_id']
+    )
+    db.session.add(truck)
+    db.session.commit()
+    return jsonify({'message': 'Truck added successfully', 'truck_id': truck.id}), 201
+
+@app.route('/trucks/assign', methods=['POST'])
+@login_required(role='Manager')
+def assign_truck():
+    data = request.json
+    truck_id = data.get('truck_id')
+    employee_id = data.get('employee_id')
+    if not truck_id or not employee_id:
+        return jsonify({'error': 'Truck ID and Employee ID required'}), 400
+    truck = db.session.get(Truck, truck_id)
+    employee = db.session.get(User, employee_id)
+    if not truck or not employee:
+        return jsonify({'error': 'Invalid truck or employee ID'}), 404
+    if employee.role != 'Employee':
+        return jsonify({'error': 'Can only assign to employees'}), 400
+    if truck.branch_id != employee.branch_id:
+        return jsonify({'error': 'Truck and employee must be in the same branch'}), 400
+    total_volume = get_truck_volume(truck_id)
+    if total_volume >= 500:
+        return jsonify({'error': 'Truck volume exceeds 500 cubic meters'}), 400
+    assignment = TruckAssignment(truck_id=truck_id, employee_id=employee_id)
+    db.session.add(assignment)
+    db.session.commit()
+    return jsonify({'message': 'Truck assigned successfully'}), 201
+
+@app.route('/trucks/assigned', methods=['GET'])
+@login_required(role='Employee')
+def get_assigned_trucks():
+    user = db.session.get(User, session['user_id'])
+    assignments = TruckAssignment.query.filter_by(employee_id=user.id).all()
+    trucks = []
+    for assignment in assignments:
+        truck = db.session.get(Truck, assignment.truck_id)
+        if truck:
+            trucks.append({
+                'id': truck.id,
+                'location': truck.location,
+                'status': truck.status,
+                'volume': get_truck_volume(truck.id),
+                'assigned_at': assignment.assigned_at.isoformat()
+            })
+    return jsonify(trucks)
 
 @app.route('/reports/usage', methods=['GET'])
 @login_required(role='Manager')
@@ -237,7 +370,7 @@ def add_employee():
         return jsonify({'error': 'Username, password, and branch_id required'}), 400
     if User.query.filter_by(username=data['username']).first():
         return jsonify({'error': 'Username already exists'}), 400
-    if not Branch.query.get(data['branch_id']):
+    if not db.session.get(Branch, data['branch_id']):
         return jsonify({'error': 'Invalid branch_id'}), 400
     hashed_pwd = bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt())
     employee = User(
@@ -249,6 +382,21 @@ def add_employee():
     db.session.add(employee)
     db.session.commit()
     return jsonify({'message': 'Employee added successfully'}), 201
+
+@app.route('/employees', methods=['GET'])
+@login_required()
+def get_employees():
+    user = db.session.get(User, session['user_id'])
+    query = User.query
+    if user.role == 'Employee':
+        query = query.filter_by(branch_id=user.branch_id)
+    employees = query.all()
+    return jsonify([{
+        'id': e.id,
+        'username': e.username,
+        'role': e.role,
+        'branch_id': e.branch_id
+    } for e in employees])
 
 @app.route('/branches', methods=['POST'])
 @login_required(role='Manager')
@@ -263,24 +411,9 @@ def add_branch():
     db.session.commit()
     return jsonify({'message': 'Branch added successfully', 'branch_id': branch.id}), 201
 
-@app.route('/trucks', methods=['POST'])
-@login_required(role='Manager')
-def add_truck():
-    data = request.json
-    if not data.get('location') or not data.get('branch_id'):
-        return jsonify({'error': 'Location and branch_id required'}), 400
-    if not Branch.query.get(data['branch_id']):
-        return jsonify({'error': 'Invalid branch_id'}), 400
-    truck = Truck(
-        location=data['location'],
-        branch_id=data['branch_id']
-    )
-    db.session.add(truck)
-    db.session.commit()
-    return jsonify({'message': 'Truck added successfully', 'truck_id': truck.id}), 201
-
 # Initialize Database
 with app.app_context():
+    db.drop_all()  # Drop existing tables to ensure schema is updated
     db.create_all()
     if not Branch.query.first():
         branches = ['Capital', 'CityA', 'CityB']
