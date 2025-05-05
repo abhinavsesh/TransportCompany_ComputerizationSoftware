@@ -1,65 +1,64 @@
-# TransportCompany_ComputerizationSoftware
-# Role-Based Login Web Application
+# Transport Company Computerization System (TCCS)
 
-This is a Flask-based web application that provides role-based access for employees and managers. Users can log in using predefined credentials and are redirected to their respective dashboards.
+A structured software solution for automating consignment handling and fleet management for a nationwide transport company. Designed to improve truck utilization, automate billing, and provide management insights.
 
-## 🚀 Features
+## 🚚 Features
 
-- Landing page with navigation to login
-- Role-based login for:
-  - Employees
-  - Managers
-- Separate dashboards for each role
-- Session management (login/logout)
-- Basic authentication handling
-- Simple HTML frontend using Flask templates
+- Branch-wise consignment entry with volume, sender/receiver, and destination details
+- Automated billing based on volume and distance
+- Automatic truck allotment when 500 m³ consignment volume is reached
+- Real-time tracking of trucks (status: available, in transit, idle)
+- Truck dispatch with printed consignment details
+- Manager dashboard with queries on:
+  - Truck status
+  - Truck usage in a given time period
+  - Consignment volume and revenue by destination
+  - Average waiting time for consignments
+  - Truck idle time for planning
 
-## 🛠️ Tech Stack
+## 🛠️ Technologies Used
 
-- Python 3
-- Flask
-- HTML (Jinja2 templating)
-- Pytest (for automated testing)
+- Python (Flask/Tkinter for UI)
+- MySQL (backend data storage)
+- Pandas (for reporting and analytics)
+- Matplotlib (for visual insights – optional)
 
-## 📁 Project Structure
+## 📂 Project Structure
 
 
-## ✅ Setup Instructions
+## ✅ Getting Started
 
-1. **Install Python 3** if not already installed.
+1. **Install dependencies**
 
-2. **Install Flask**:
+2. **Set up MySQL**
+- Create database and tables using `database.sql`.
 
-3. **Clone the repository and navigate into it**:
+3. **Run the app**
 
-4. **Run the application**:
+4. Open browser and visit: http://localhost:5000/
 
-5. Open your browser and go to:
+## 📈 Reporting Metrics
 
-## 🔐 Login Credentials
-
-- **Employee**
-- Username: `employee`
-- Password: `password123`
-
-- **Manager**
-- Username: `manager`
-- Password: `admin123`
+- Volume handled per destination
+- Revenue generated
+- Average consignment waiting time
+- Truck idle time in branches
+- Truck usage over selected date ranges
 
 ## 🧪 Testing
 
-Automated tests were written using `pytest`. To run the tests:
-Run the test files.
+Manual and logic-based validation was performed for:
+- Threshold volume-based truck assignment
+- Consignment readiness tracking
+- Data integrity for billing and queries
 
+## 📌 Future Enhancements
 
-## 📌 Future Improvements
-
-- Add a database for dynamic user authentication
-- Improve front-end validation and error feedback
-- Extend tests to cover more use cases
+- Add role-based login (manager, operator)
+- Visual dashboards for analytics
+- SMS/email dispatch notifications
+- Truck route optimization algorithms
 
 ## 📄 License
 
-This project is open-source and available under the MIT License.
-
-
+This project is open-source under the MIT License.
