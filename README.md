@@ -49,13 +49,8 @@ This is a Flask-based web application that provides role-based access for employ
 ## 🧪 Testing
 
 Automated tests were written using `pytest`. To run the tests:
+Run the test files.
 
-
-### Test Results
-
-- 6 test cases executed
-- ✅ 4 passed
-- ❌ 2 failed (edge-case handling and user feedback display)
 
 ## 📌 Future Improvements
 
