@@ -56,7 +56,6 @@ Run the test files.
 
 - Add a database for dynamic user authentication
 - Improve front-end validation and error feedback
-- Support password reset and new user registration
 - Extend tests to cover more use cases
 
 ## 📄 License
